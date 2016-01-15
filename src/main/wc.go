@@ -7,8 +7,8 @@ import "strings"
 import "unicode"
 import "strconv"
 import "container/list"
-
-// our simplified version of MapReduce does not supply a
+our
+//  simplified version of MapReduce does not supply a
 // key to the Map function, as in the paper; only a value,
 // which is a part of the input file content. the return
 // value should be a list of key/value pairs, each represented
@@ -21,31 +21,28 @@ func Map(value string) *list.List {
 	}
 
 	var words = strings.FieldsFunc(value,f) 
-
 	for index:=range words{
-		var cnt=0
-		
 		//check if element already exists
+		count := func() int {
+		var cnt=0
 		for element := result.Front(); element != nil; element = element.Next() {
 			
 			var ele_key = element.Value.( mapreduce.KeyValue).Key
 			var ele_val = element.Value.( mapreduce.KeyValue).Value
-			//fmt.Printf("key %s, value %s", ele_key,ele_val)
-			if ele_key == words[index]      {
+			if ele_key == words[index]      {				
 				cnt, err := strconv.Atoi(ele_val)
-				if err != nil {
+				if err != nil 	{
 					fmt.Printf("error in conversion")
-				}
-				cnt=cnt+1
-				fmt.Printf("cnt %d" , cnt)
+				}		
 				result.Remove(element)
+				return cnt
 			}
 		}
-		new_keyval := mapreduce.KeyValue{Key:words[index],Value: strconv.Itoa(cnt) }
-		result.PushBack(new_keyval)
-		
+		return cnt
 	}
-
+		new_keyval := mapreduce.KeyValue{Key:words[index],Value: strconv.Itoa(count()+1) }
+		result.PushBack(new_keyval)
+	}
 	return result
 }	
 
