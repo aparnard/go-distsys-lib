@@ -75,9 +75,9 @@ func InitMapReduce(nmap int, nreduce int,
 	mr.file = file
 	mr.MasterAddress = master
 	mr.alive = true
-	mr.registerChannel = make(chan string)
-	mr.DoneChannel = make(chan bool)
-	mr.FreeChannel = make(chan string)
+	mr.registerChannel = make(chan string,1000)
+	mr.DoneChannel = make(chan bool,1000)
+	mr.FreeChannel = make(chan string,1000)
 
 	// initialize any additional state here
 	return mr
