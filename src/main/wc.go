@@ -7,7 +7,7 @@ import "strings"
 import "unicode"
 import "strconv"
 import "container/list"
-our
+
 //  simplified version of MapReduce does not supply a
 // key to the Map function, as in the paper; only a value,
 // which is a part of the input file content. the return
