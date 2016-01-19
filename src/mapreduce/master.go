@@ -9,6 +9,8 @@ type WorkerInfo struct {
 	// You can add definitions here.
 }
 
+var completed_channel = make(chan bool,0)
+//var completed int
 
 // Clean up all workers by sending a Shutdown RPC to each one of them Collect
 // the number of jobs each work has performed.
@@ -28,50 +30,53 @@ func (mr *MapReduce) KillWorkers() *list.List {
 	return l
 }
 
+func (mr *MapReduce) callWorker(doOp JobType,jobNum int,NumOtherPhase int) {
+	var res DoJobReply
+	res.OK= false
+	wk:=new(Worker)
+	
+	args := &DoJobArgs{mr.file,doOp,jobNum,NumOtherPhase}
+	err:=false		
+	
+	for err==false{
+		wk.name = <-mr.FreeChannel
+		err= call(wk.name, "Worker.DoJob", args, &res)
+	}
+	
+	mr.completed=mr.completed+1
+	mr.FreeChannel<-wk.name
+	
+	if doOp=="Map" && mr.completed == mr.nMap {
+		completed_channel <- true
+	} else if doOp=="Reduce" && mr.completed == mr.nReduce {
+		completed_channel <- true
+	} 
+	
+}
 
 
 func (mr *MapReduce) RunMaster() *list.List {
-	// Your code here
-
+	mr.completed=0
 	for i := 0; i < mr.nMap; i++ {
-			//var i=12
-//		go func() {
-			var res DoJobReply
-			res.OK= false
-			wk:=new(Worker)
-			wk.name = <-mr.FreeChannel
-			args := &DoJobArgs{mr.file,"Map",i,mr.nReduce}
-			
-			for res.OK==false{
-			_= call(wk.name, "Worker.DoJob", args, &res)
-			}
-			mr.FreeChannel<-wk.name
-//		}()
+		var val=i
+		go func(i int) {
+			mr.callWorker("Map",i,mr.nReduce)	
+		}(val)
 	}
+	
+	<-completed_channel
+	
+	fmt.Printf("\n Starting Reduce")
+	
+	mr.completed=0
+	for j := 0; j < mr.nReduce; j++ {
+		var val=j
+		go func(i int) {
+			mr.callWorker("Reduce",i,mr.nMap)
+		}(val)
+	} 
 
-	for i := 0; i < mr.nReduce; i++ {
-		
-//		go func() {
-			var res DoJobReply
-			res.OK= false
-			wk:=new(Worker)
-			name := <-mr.FreeChannel
-			wk.name = name
-			args := new(DoJobArgs)
-			args.File=mr.file
-			args.Operation="Reduce"
-			args.JobNumber=i
-			args.NumOtherPhase=mr.nMap
-			
-			for res.OK==false{
-			_= call(wk.name, "Worker.DoJob", args, &res)
-			//if err!=nil {
-			//	fmt.Printf("Error in Reduce")
-			//}
-			}
-			mr.FreeChannel<-wk.name
-//		}()
-	}
-	//return 1
+	<-completed_channel
+	
 	return mr.KillWorkers()
 }
