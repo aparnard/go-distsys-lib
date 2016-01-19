@@ -60,6 +60,7 @@ type MapReduce struct {
 	alive           bool
 	l               net.Listener
 	stats           *list.List
+	completed		int
 
 	// Map of registered workers that you need to keep up to date
 	Workers map[string]*WorkerInfo
