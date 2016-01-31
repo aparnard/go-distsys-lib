@@ -52,7 +52,7 @@ func (vs *ViewServer) makeIdleBackup() {
 }
 
 func (vs *ViewServer) printDetails() {
-	fmt.Printf("\nView: %d\tAck:%t\tPrimary: %s\tBackup: %s",vs.currView.Viewnum,vs.currView.ack,vs.currView.Primary,vs.currView.Backup)
+	fmt.Printf("\nView: %d\tAck:%t\tPrimary: %s\tBackup: %s",vs.currView.Viewnum,vs.currView.Ack,vs.currView.Primary,vs.currView.Backup)
 	for server,_:= range vs.idle {
 		fmt.Printf("\tIdle Name: %s",server) }
 }
@@ -71,14 +71,14 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		case !vs.hasPrimary() && vs.currView.Viewnum==0 :
 			vs.currView.Primary=args.Me
 			vs.currView.Viewnum=1
-			vs.currView.ack=false
+			vs.currView.Ack=false
 
 		//If primary	
 		case vs.isPrimary(args.Me):
 			//acknowledges
-			if vs.currView.ack==false && args.Viewnum == vs.currView.Viewnum {
+			if vs.currView.Ack==false && args.Viewnum == vs.currView.Viewnum {
 				//fmt.Printf("\nPrimary acknowledges: Args:%d\tVS:%d",args.Viewnum,vs.currView.Viewnum)
-				vs.currView.ack=true }
+				vs.currView.Ack=true }
 			//Primary restarts
 			if args.Viewnum == 0 && vs.currView.Viewnum >2 {
 				//fmt.Printf("\nPrimary Resets")
@@ -86,7 +86,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 				//if there are idle servers
 				vs.currView.Backup=""	
 				vs.currView.Viewnum=vs.currView.Viewnum+1
-				vs.currView.ack=false
+				vs.currView.Ack=false
 				vs.makeIdleBackup()
 			}
 			if vs.isPrimary(args.Me) {
@@ -100,7 +100,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 				//fmt.Printf("\nBackup Resets")
 				vs.currView.Backup=""
 				vs.currView.Viewnum=vs.currView.Viewnum+1
-				vs.currView.ack=false
+				vs.currView.Ack=false
 				vs.makeIdleBackup()
 			}
 			if vs.isBackup(args.Me) {
@@ -111,7 +111,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 			if  !vs.hasBackup() && vs.hasPrimary() { //} && vs.currView.ack==true{
 				vs.currView.Backup=args.Me
 				vs.currView.Viewnum=vs.currView.Viewnum+1
-				vs.currView.ack=false
+				vs.currView.Ack=false
 			}
 
 			//if idle add to idle map
@@ -163,21 +163,21 @@ func (vs *ViewServer) tick() {
 	//check if primary hasn't responded in the last 5 intervals
 	switch {
 
-		case vs.primarytick>4 && vs.currView.ack==true :
+		case vs.primarytick>4 && vs.currView.Ack==true :
 			//fmt.Printf("\nPrimary Dead. Backup becomes Primary")
 			vs.currView.Primary=vs.currView.Backup
 			vs.currView.Viewnum=vs.currView.Viewnum+1
-			vs.currView.ack=false
+			vs.currView.Ack=false
 			vs.currView.Backup=""
 			vs.makeIdleBackup()
 				
 			
 	//check if backup hasn't responded in the last 5 intervals
-		case vs.backuptick > 4 && vs.currView.ack==true :
+		case vs.backuptick > 4 && vs.currView.Ack==true :
 			//fmt.Printf("\nBackup Dead")
 			vs.currView.Backup=""
 			vs.currView.Viewnum=vs.currView.Viewnum+1
-			vs.currView.ack=false
+			vs.currView.Ack=false
 			vs.makeIdleBackup()
 	}
 	vs.mu.Unlock()

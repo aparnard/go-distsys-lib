@@ -37,7 +37,7 @@ type View struct {
 	Viewnum uint
 	Primary string
 	Backup  string
-	ack     bool
+	Ack     bool
 }
 
 // clients should send a Ping RPC this often,
