@@ -1,16 +1,19 @@
-package pbservice
+	package pbservice
 
 import "viewservice"
 import "net/rpc"
 import "fmt"
-
+import "time"
 import "crypto/rand"
 import "math/big"
 
 
 type Clerk struct {
-	vs *viewservice.Clerk
+	vs *viewservice.Clerk //me and server
 	// Your declarations here
+	currView viewservice.View
+	ClientID int64
+
 }
 
 // this may come in handy.
@@ -24,11 +27,23 @@ func nrand() int64 {
 func MakeClerk(vshost string, me string) *Clerk {
 	ck := new(Clerk)
 	ck.vs = viewservice.MakeClerk(me, vshost)
+	//ck.currView,_ = ck.getView()
+	ck.currView=viewservice.View{}
+	ck.ClientID = nrand()
 	// Your ck.* initializations here
 
 	return ck
 }
 
+func (ck *Clerk) getView() {
+
+	view,err := ck.vs.Ping(ck.currView.Viewnum)
+
+	if err == nil {
+	//	fmt.Printf("\n Got View:  View:%d\tPrimary:%s\tBackup:%s\tAck:%t",view.Viewnum,view.Primary,view.Backup,view.Ack)
+		ck.currView = view
+	}
+}
 
 //
 // call() sends an RPC to the rpcname handler on server srv
@@ -74,17 +89,62 @@ func call(srv string, rpcname string,
 func (ck *Clerk) Get(key string) string {
 
 	// Your code here.
-
-	return "???"
+	if ck.currView.Viewnum==0 {
+		ck.getView()
+		//ck.currView=view
+	}
+	opid:=nrand()
+	args:=GetArgs{ck.ClientID,opid,key}
+	var reply GetReply
+	for reply.Err != OK{
+		err:=call(ck.currView.Primary,"PBServer.Get",args, &reply)
+		
+		if err == false || reply.Err==ErrWrongServer {
+			//stat:=false
+			//var view viewservice.View
+			//for stat==false{
+				ck.getView()
+				time.Sleep(viewservice.PingInterval)
+				//ck.currView=view
+			//}
+		} else if reply.Err ==ErrNoKey {
+			return ""
+			}
+	}
+	return reply.Value
 }
 
 //
 // send a Put or Append RPC
 //
 func (ck *Clerk) PutAppend(key string, value string, op string) {
-
+	if ck.currView.Viewnum==0 {
+		ck.getView()
+		//ck.currView=view
+	}
+	opid:=nrand()
 	// Your code here.
+	var doAppend bool
+	if op=="Put"{
+		doAppend=false
+	} else if op=="Append" {
+		doAppend=true
+	}
+	
+	args:=PutAppendArgs{ck.ClientID,opid,doAppend,key,value}
+	var reply PutAppendReply
+
+	for reply.Err != "OK"{
+		//fmt.Println("Put to %s with Key %s and Value %s",ck.currView.Primary,key,value)
+		err:=call(ck.currView.Primary,"PBServer.PutAppend",args, &reply)
+		//fmt.Printf("ERROR IN PUT",reply.Err)
+		if err == false || reply.Err == "ErrWrongServer" {
+			ck.getView()
+			time.Sleep(viewservice.PingInterval)
+		}
+	}
 }
+
 
 //
 // tell the primary to update key's value.

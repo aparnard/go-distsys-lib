@@ -38,15 +38,18 @@ func TestBasicFail(t *testing.T) {
 
 	tag := "basic"
 	vshost := port(tag+"v", 1)
+
 	vs := viewservice.StartServer(vshost)
 	time.Sleep(time.Second)
 	vck := viewservice.MakeClerk("", vshost)
-
+	//vck := viewservice.MakeClerk(port("1"), vshost)
+	
 	ck := MakeClerk(vshost, "")
-
+	
 	fmt.Printf("Test: Single primary, no backup ...\n")
 
 	s1 := StartServer(vshost, port(tag, 1))
+	//fmt.Printf("\nS1:",s1.me)
 
 	deadtime := viewservice.PingInterval * viewservice.DeadPings
 	time.Sleep(deadtime * 2)
@@ -133,12 +136,14 @@ func TestBasicFail(t *testing.T) {
 			break
 		}
 		time.Sleep(viewservice.PingInterval)
+
 	}
 	v, _ = vck.Get()
+
 	if v.Primary != s2.me {
 		t.Fatal("backup never switched to primary")
 	}
-
+	
 	check(ck, "1", "v1a")
 	check(ck, "3", "33")
 	check(ck, "4", "44")
