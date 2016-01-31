@@ -52,7 +52,7 @@ func (vs *ViewServer) makeIdleBackup() {
 }
 
 func (vs *ViewServer) printDetails() {
-	fmt.Printf("\nView: %d\tAck:%t\tPrimary: %s\tBackup: %s",vs.currView.Viewnum,vs.currView.Ack,vs.currView.Primary,vs.currView.Backup)
+	fmt.Printf("\nVS   View: %d\tAck:%t\tPrimary: %s\tBackup: %s",vs.currView.Viewnum,vs.currView.Ack,vs.currView.Primary,vs.currView.Backup)
 	for server,_:= range vs.idle {
 		fmt.Printf("\tIdle Name: %s",server) }
 }
@@ -62,30 +62,34 @@ func (vs *ViewServer) printDetails() {
 // server Ping RPC handler.
 //
 func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
-	//fmt.Printf("\nView Number:%d\tAck:%t",args.Viewnum,vs.currView.ack)
+	//fmt.Printf("\nVS Tick")
+	//fmt.Printf("\nView Number:%d\tAck:%s",args.Viewnum,args.Me)
 	//vs.printDetails()
 	vs.mu.Lock()
-
+	address:=args.Me
 	switch{
 		//initializing first view
 		case !vs.hasPrimary() && vs.currView.Viewnum==0 :
-			vs.currView.Primary=args.Me
 			vs.currView.Viewnum=1
 			vs.currView.Ack=false
-
+			vs.currView.Primary=address
+			//log.Printf("\nCurrView:%s\targs:%s",vs.currView.Primary,args.Me)
+			//vs.printDetails()
 		//If primary	
 		case vs.isPrimary(args.Me):
 			//acknowledges
 			if vs.currView.Ack==false && args.Viewnum == vs.currView.Viewnum {
-				//fmt.Printf("\nPrimary acknowledges: Args:%d\tVS:%d",args.Viewnum,vs.currView.Viewnum)
-				vs.currView.Ack=true }
+				vs.currView.Ack=true 
+			}
 			//Primary restarts
 			if args.Viewnum == 0 && vs.currView.Viewnum >2 {
 				//fmt.Printf("\nPrimary Resets")
 				vs.currView.Primary=vs.currView.Backup
 				//if there are idle servers
 				vs.currView.Backup=""	
+				fmt.Printf("\nIncrement A")
 				vs.currView.Viewnum=vs.currView.Viewnum+1
+
 				vs.currView.Ack=false
 				vs.makeIdleBackup()
 			}
@@ -99,6 +103,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 			if args.Viewnum == 0 && vs.currView.Viewnum >2 {
 				//fmt.Printf("\nBackup Resets")
 				vs.currView.Backup=""
+				fmt.Printf("\nIncrement B")
 				vs.currView.Viewnum=vs.currView.Viewnum+1
 				vs.currView.Ack=false
 				vs.makeIdleBackup()
@@ -110,6 +115,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 		default:
 			if  !vs.hasBackup() && vs.hasPrimary() { //} && vs.currView.ack==true{
 				vs.currView.Backup=args.Me
+				fmt.Printf("\nIncrement C")
 				vs.currView.Viewnum=vs.currView.Viewnum+1
 				vs.currView.Ack=false
 			}
@@ -122,6 +128,7 @@ func (vs *ViewServer) Ping(args *PingArgs, reply *PingReply) error {
 
 
 	reply.View=vs.currView
+	//fmt.Printf("\nView:%d\tPrimary:%s\tBackup:%s\tAck:%t",reply.View.Viewnum,reply.View.Primary,reply.View.Backup,reply.View.Ack)
 
 	vs.mu.Unlock()
 	return nil
@@ -149,16 +156,22 @@ func (vs *ViewServer) Get(args *GetArgs, reply *GetReply) error {
 func (vs *ViewServer) tick() {
 	// Your code here.
 	vs.mu.Lock()
-	vs.primarytick=vs.primarytick+1
-	vs.backuptick=vs.backuptick+1
+
+	//vs.printDetails()
 	//update tickcount for idle servers
 	for server,tickcnt := range vs.idle {
 		tickcnt = tickcnt+1
-		if tickcnt > 4 {
+		if tickcnt > 4 || vs.isPrimary(server) || vs.isBackup(server){
 			delete(vs.idle,server)
 		} else {
 			vs.idle[server]=tickcnt
 		}
+	}
+
+	if vs.hasPrimary() {
+		vs.primarytick=vs.primarytick+1
+	} else if vs.hasBackup() {
+		vs.backuptick=vs.backuptick+1
 	}
 	//check if primary hasn't responded in the last 5 intervals
 	switch {
@@ -166,6 +179,7 @@ func (vs *ViewServer) tick() {
 		case vs.primarytick>4 && vs.currView.Ack==true :
 			//fmt.Printf("\nPrimary Dead. Backup becomes Primary")
 			vs.currView.Primary=vs.currView.Backup
+			fmt.Printf("\nIncrement D")
 			vs.currView.Viewnum=vs.currView.Viewnum+1
 			vs.currView.Ack=false
 			vs.currView.Backup=""
@@ -176,11 +190,13 @@ func (vs *ViewServer) tick() {
 		case vs.backuptick > 4 && vs.currView.Ack==true :
 			//fmt.Printf("\nBackup Dead")
 			vs.currView.Backup=""
+			fmt.Printf("\nIncrement E")
 			vs.currView.Viewnum=vs.currView.Viewnum+1
 			vs.currView.Ack=false
 			vs.makeIdleBackup()
 	}
 	vs.mu.Unlock()
+	//fmt.Printf("\nPrimary Tick: %d",vs.primarytick)
 }
 
 //
