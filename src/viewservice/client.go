@@ -61,7 +61,10 @@ func (ck *Clerk) Ping(viewnum uint) (View, error) {
 	var reply PingReply
 
 	// send an RPC request, wait for the reply.
+	//fmt.Println("\nPinging from ",ck.me)
 	ok := call(ck.server, "ViewServer.Ping", args, &reply)
+	//fmt.Printf("\nclerk:  View:%d\tPrimary:%s\tBackup:%s\tAck:%t",reply.View.Viewnum,reply.View.Primary,reply.View.Backup,reply.View.Ack)
+	//fmt.Printf("\nPrimary:%s",reply.View.Primary)
 	if ok == false {
 		return View{}, fmt.Errorf("Ping(%v) failed", viewnum)
 	}

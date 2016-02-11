@@ -71,6 +71,7 @@ func TestBasicFail(t *testing.T) {
 	ck.Put("ak", "xx")
 	ck.Append("ak", "yy")
 	check(ck, "ak", "xxyy")
+	
 
 	fmt.Printf("  ... Passed\n")
 
@@ -258,8 +259,10 @@ func TestFailPut(t *testing.T) {
 	}
 	time.Sleep(time.Second) // wait for backup initializion
 	v1, _ := vck.Get()
-	if v1.Primary != s1.me || v1.Backup != s2.me {
-		t.Fatalf("wrong primary or backup")
+	if v1.Primary != s1.me  {
+		t.Fatalf("wrong primary")
+	} else if v1.Backup != s2.me {
+		t.Fatalf("wrong backup")
 	}
 
 	ck := MakeClerk(vshost, "")
@@ -286,8 +289,10 @@ func TestFailPut(t *testing.T) {
 	}
 	time.Sleep(time.Second) // wait for backup initialization
 	v2, _ := vck.Get()
-	if v2.Primary != s1.me || v2.Backup != s3.me {
-		t.Fatal("wrong primary or backup")
+	if v2.Primary != s1.me {
+		t.Fatal("wrong primary")
+	} else if v2.Backup != s3.me {
+		t.Fatal("wrong back up")
 	}
 
 	check(ck, "a", "aaa")

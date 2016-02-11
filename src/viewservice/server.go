@@ -170,7 +170,8 @@ func (vs *ViewServer) tick() {
 
 	if vs.hasPrimary() {
 		vs.primarytick=vs.primarytick+1
-	} else if vs.hasBackup() {
+	}
+	if vs.hasBackup() {
 		vs.backuptick=vs.backuptick+1
 	}
 	//check if primary hasn't responded in the last 5 intervals

@@ -11,7 +11,7 @@ import "sync/atomic"
 import "os"
 import "syscall"
 import "math/rand"
-//import "strconv"
+import "strconv"
 //import "errors"
 
 
@@ -24,8 +24,7 @@ type PBServer struct {
 	vs         *viewservice.Clerk
 	// Your declarations here.
 	view 		viewservice.View
-	//isPrimary	bool
-	//isBackup	bool
+	backup      string
 	synced		bool
 	log			map[int64]LogEntry
 	data		map[string]string
@@ -36,6 +35,7 @@ func (pb *PBServer) getCheckLogs(args *GetArgs) (bool,string){
 	//fmt.Printf("\nChecking old logs")
 	entry := pb.log[args.OpID]
 	if entry.ClientID == args.ClientID && entry.Err==OK {
+		fmt.Printf("\n FRom Previous LOg")
 		return true, entry.Value
 	} else {
 		return false, ""
@@ -44,63 +44,61 @@ func (pb *PBServer) getCheckLogs(args *GetArgs) (bool,string){
 
 func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 
-	// Your code here.
-	pb.mu.Lock()
-	if pb.view.Primary==pb.me {
-		//fmt.Printf("\n In GET as Primary")
-		//checking log. Atmost once implementation
-		stat,val:=pb.getCheckLogs(args) 
-		if stat==true {
-			//reply=GetReply{args.OpID,OK,val}
-			reply.OpID=args.OpID
-			reply.Err=OK
-			reply.Value=val
-			pb.mu.Unlock()
-			return nil
-		}
-
-		//get value using the key	
-		value:=pb.data[args.Key]
-		var err Err
-		if value == "" { 
-			err=ErrNoKey
-		} else { 
-			err=OK
-		}
-
-		//logging result
-		pb.log[args.OpID]=LogEntry{args.ClientID, "Get", err, args.Key,value}
-		entry:=LogEntry{args.ClientID, "Get", err, args.Key,value}
-		
-		//send log to backup
-		if pb.view.Backup !="" {
-			foward:=Forwards{args.OpID,entry}
-			var response Response
-			e:=call(pb.view.Backup,"PBServer.Forward",foward,&response)
-			if e == true && response.Err == OK{
-				//reply=GetReply{args.OpID,err,value} // all ok reply to client
-				//fmt.Printf("\nSuccessfully forward OP to backup?%s",response.Err)
-				reply.OpID=args.OpID
-				reply.Err=OK
-				reply.Value=value
-				pb.log[args.OpID]=entry
-			} else if response.Err == ErrReject {
-		//reply:=GetReply{args.OpID,ErrWrongServer,""} //backup rejected op hence not primary anymore
-				reply.OpID=args.OpID
-				reply.Err=ErrWrongServer
-				reply.Value=""
-			} 
-		} else {
-			reply.OpID=args.OpID
-			reply.Err=OK
-			reply.Value=value
-			pb.log[args.OpID]=entry			}
-	}else {
-		//reply:=GetReply{args.OpID,ErrWrongServer,""} //not primary.
+	if pb.view.Primary != pb.me {
 		reply.OpID=args.OpID
 		reply.Err=ErrWrongServer
 		reply.Value=""
+		return nil
 	}
+
+	pb.mu.Lock()
+	
+		//checking log. Atmost once implementation
+	stat,val:=pb.getCheckLogs(args) 
+	if stat==true {
+		reply.OpID=args.OpID
+		reply.Err=OK
+		reply.Value=val
+		pb.mu.Unlock()
+		return nil
+	}
+
+
+	value:=pb.data[args.Key]
+	
+	var err Err
+	err=OK
+	if value == "" { 
+		err=ErrNoKey
+	}
+	
+	//logging result
+	entry:=LogEntry{args.ClientID, "Get", err, args.Key,value}
+	reply.Value=value
+	pb.log[args.OpID]=entry			
+		
+		//send log to backup
+	if pb.view.Backup !="" {
+		foward:=Forwards{args.OpID,entry}
+		var response Response
+		e:=call(pb.view.Backup,"PBServer.Forward",foward,&response)
+		if e == true && response.Err == OK{
+			reply.OpID=args.OpID
+			reply.Err=OK
+			reply.Value=value
+			pb.log[args.OpID]=entry
+		} else if response.Err == ErrReject {
+			reply.OpID=args.OpID
+			reply.Err=ErrWrongServer
+			reply.Value=""
+	} 
+	} else {
+		reply.OpID=args.OpID
+		reply.Err=OK
+		
+	
+		}
+
 	pb.mu.Unlock()
 	return nil
 }
@@ -108,8 +106,10 @@ func (pb *PBServer) Get(args *GetArgs, reply *GetReply) error {
 func (pb *PBServer) Forward(forward *Forwards, reply *Response) error {
 	pb.mu.Lock()
 	if pb.view.Backup==pb.me {
-	//	fmt.Printf("\nAccepting OP from Primary")
 		pb.log[forward.OpID]=forward.Log
+		if forward.Log.Op=="Put" {
+			pb.data[forward.Log.Key]=forward.Log.Value
+		}
 		reply.Err = OK
 
 	} else {
@@ -121,6 +121,7 @@ func (pb *PBServer) Forward(forward *Forwards, reply *Response) error {
 }
 
 func (pb *PBServer) putCheckLogs(args *PutAppendArgs) (bool,string){
+
 	entry := pb.log[args.OpID]
 	if entry.ClientID == args.ClientID && entry.Err==OK{
 		return true, ""
@@ -132,51 +133,54 @@ func (pb *PBServer) putCheckLogs(args *PutAppendArgs) (bool,string){
 func (pb *PBServer) PutAppend(args *PutAppendArgs, reply *PutAppendReply) error {
 	//fmt.Println("Put Recieved")
 	// Your code here.
+	//fmt.Println("\nOP ID "+strconv.Itoa(int(args.OpID)))
+	if pb.view.Primary != pb.me {
+		fmt.Println("I'm not the Primary")
+		reply.OpID=args.OpID
+		reply.Err=ErrWrongServer
+		return nil
+	}
+
+
 	pb.mu.Lock()
-	if pb.view.Primary==pb.me {
-		//checking log. Atmost once implementation
-		stat,_:=pb.putCheckLogs(args) 
-		if stat==true {
-			reply.OpID=args.OpID
-			reply.Err=OK
-			pb.mu.Unlock()
-			return nil
-			}
-		value:=args.Value
-		if args.DoAppend {
-			old_value:=pb.data[args.Key]
-			if old_value!=""{
-				//tmp:=int(hash(old_value+args.Value))
+	
+	stat,_:=pb.putCheckLogs(args) 
+	if stat==true {
+		reply.OpID=args.OpID
+		reply.Err=OK
+		pb.mu.Unlock()
+		return nil
+		}
+
+	value:=args.Value
+	if args.DoAppend {
+		old_value:=pb.data[args.Key]
+		if old_value!=""{
 				value=old_value+args.Value
 			}}	
 
 		//pb.log[args.OpID]=
-		entry:=LogEntry{args.ClientID, "Put", OK, args.Key,value}
+	entry:=LogEntry{args.ClientID, "Put", OK, args.Key,value}
+	pb.data[args.Key]=value
+	pb.log[args.OpID]=entry
+	//fmt.Println("\nUpdating Log. Number of entries: "+ strconv.Itoa(len(pb.log)) )
 		
-		if pb.view.Backup !="" {
+	if pb.hasBackup() {
 			//send log to backup
-			forward:=Forwards{args.OpID,entry}
-			var response Response
-			e:=call(pb.view.Backup,"PBServer.Forward",forward,&response)
-			if e == true && response.Err == OK{
-				pb.data[args.Key]=value
-				pb.log[args.OpID]=entry
-				reply.OpID=args.OpID
-				reply.Err=OK
-				//reply:=PutAppendReply{args.OpID,OK} // all ok reply to client
-			} else if response.Err == ErrReject {
-				reply.OpID=args.OpID
-				reply.Err=ErrWrongServer }
-				//reply:=PutAppendReply{args.OpID,ErrWrongServer} //backup rejected op hence not primary anymore}
-		} else {
+		forward:=Forwards{args.OpID,entry}
+		var response Response
+		e:=call(pb.view.Backup,"PBServer.Forward",forward,&response)
+		if e == true && response.Err == OK{
 			pb.data[args.Key]=value
-			pb.log[args.OpID]=entry } 
-	} else {
-		//reply:=PutAppendReply{args.OpID,ErrWrongServer} //not primary.
-		fmt.Println("I'm not the Primary")
-		reply.OpID=args.OpID
-		reply.Err=ErrWrongServer
-	}
+			pb.log[args.OpID]=entry
+			reply.OpID=args.OpID
+			reply.Err=OK
+				//reply:=PutAppendReply{args.OpID,OK} // all ok reply to client
+		} else if response.Err == ErrReject {
+			reply.OpID=args.OpID
+			reply.Err=ErrWrongServer }
+				//reply:=PutAppendReply{args.OpID,ErrWrongServer} //backup rejected op hence not primary anymore}
+	} 
 	pb.mu.Unlock()
 	return nil
 	}
@@ -187,7 +191,6 @@ func (pb *PBServer) hasBackup() bool{
 }
 func (pb *PBServer) SyncBackup() {
 
-	//fmt.Printf("\n Syncing Backup")
 	if pb.hasBackup() {
 		
 		var status Response
@@ -195,24 +198,23 @@ func (pb *PBServer) SyncBackup() {
 		e:=false
 		for e==false{
 			e=call(pb.view.Backup,"PBServer.Sync",packet,&status)
-			//fmt.Printf("\nError in sync",)
-			pb.synced=true
 		}
+	pb.synced=true
 	}
 
 }
 
 func (pb *PBServer) Sync(packet *Packet, reply *Response) error{
 	pb.mu.Lock()
-	fmt.Println("Backup Syncing")
-	//pb.data=packet.Data
-	for key,val := range packet.Data {
-		pb.data[key]=val
-	}
-	//pb.log=packet.Log
-	for id,entry := range packet.Log {
-		pb.log[id]=entry
-	}
+	fmt.Println("\nBackup Syncing "+ strconv.Itoa(len(packet.Log)))
+	pb.log=packet.Log
+	pb.data=packet.Data
+	//for id,entry := range packet.Log {
+	//	pb.log[id]=entry
+		//fmt.Printf("\n Packet Entry:OP:%s\tKey:%s",packet.Log[id].Op,packet.Log[id].Key)
+		//fmt.Printf("\n Backup Entry:OP:%s\tKey:%s",pb.log[id].Op,pb.log[id].Key)
+	//}
+
 	reply.Err=OK
 	pb.mu.Unlock()
 	return nil
@@ -224,25 +226,57 @@ func (pb *PBServer) Sync(packet *Packet, reply *Response) error{
 //   transition to new view.
 //   manage transfer of state from primary to new backup.
 //
+func (pb *PBServer) printData() {
+
+	for key, value := range pb.data{
+		fmt.Println("Key "+key+" Value "+ value)
+	}
+}
+
+func (pb *PBServer) reRunLog() {
+	fmt.Println("\nReruning Previous Primary Logs: "+ strconv.Itoa(len(pb.log)))
+	for _, entry := range pb.log{
+		if entry.Op=="Put"  && entry.Err=="OK" {
+			pb.data[entry.Key]=entry.Value
+			fmt.Println("key: "+entry.Key+" Value: "+entry.Value)
+		}
+	}
+
+}
+
 func (pb *PBServer) tick() {
 	// Your code here.
 	pb.mu.Lock()
 	view,_:= pb.vs.Ping(pb.view.Viewnum)
-	pb.view=view
-	
-	//not primary before. BUt primary now.
-	if pb.view.Primary== pb.me {
-		//fmt.Printf("\nI'm the Primary:%s\nMy Backup is:%s\nMy Sync status is:%t", pb.me,pb.view.Backup,pb.synced)
-		if pb.synced==false{
-			pb.SyncBackup()
-		}
-	//} else if pb.view.Backup== pb.me{
-	//	fmt.Printf("\nI'm the Backup")
-	} else if pb.view.Primary !=pb.me {
-		pb.synced=false
+	//not primary before. But primary now
+	if pb.view.Backup==pb.me && view.Primary==pb.me {
+		fmt.Printf("\nI'm the new Primary now :%s",pb.me)
+	//	pb.reRunLog();
+		pb.backup=""
 	}
 
 
+	pb.view=view
+	
+	//I am the primary
+	if pb.view.Primary== pb.me {
+	
+		//if backup has changed
+		if pb.backup!= pb.view.Backup {
+			//pb.synced=false
+			pb.SyncBackup()
+			pb.backup=pb.view.Backup
+		}
+		//backup hasnt synced
+		if pb.synced==false{
+			pb.SyncBackup()
+		}
+	} else if pb.view.Primary !=pb.me { //i'm no longer the primary
+		pb.backup=""
+		pb.synced=false
+	}
+	
+	
 	pb.mu.Unlock()
 }
 

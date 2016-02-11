@@ -6,6 +6,7 @@ import "fmt"
 import "time"
 import "crypto/rand"
 import "math/big"
+//import "math/rand"
 
 
 type Clerk struct {
@@ -29,7 +30,9 @@ func MakeClerk(vshost string, me string) *Clerk {
 	ck.vs = viewservice.MakeClerk(me, vshost)
 	//ck.currView,_ = ck.getView()
 	ck.currView=viewservice.View{}
+	//rand.Seed(time.Now().UTC().UnixNano())
 	ck.ClientID = nrand()
+
 	// Your ck.* initializations here
 
 	return ck
@@ -74,7 +77,7 @@ func call(srv string, rpcname string,
 	if err == nil {
 		return true
 	}
-
+	//fmt.Println("Call error")
 	fmt.Println(err)
 	return false
 }
@@ -94,20 +97,16 @@ func (ck *Clerk) Get(key string) string {
 		//ck.currView=view
 	}
 	opid:=nrand()
-	args:=GetArgs{ck.ClientID,opid,key}
+	args:=GetArgs{opid,ck.ClientID,key}
 	var reply GetReply
 	for reply.Err != OK{
 		err:=call(ck.currView.Primary,"PBServer.Get",args, &reply)
 		
 		if err == false || reply.Err==ErrWrongServer {
-			//stat:=false
-			//var view viewservice.View
-			//for stat==false{
-				ck.getView()
-				time.Sleep(viewservice.PingInterval)
-				//ck.currView=view
-			//}
+			ck.getView()
+			time.Sleep(viewservice.PingInterval)
 		} else if reply.Err ==ErrNoKey {
+			fmt.Printf("\nNo Key Found")
 			return ""
 			}
 	}
@@ -131,7 +130,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		doAppend=true
 	}
 	
-	args:=PutAppendArgs{ck.ClientID,opid,doAppend,key,value}
+	args:=PutAppendArgs{opid,ck.ClientID,doAppend,key,value}
 	var reply PutAppendReply
 
 	for reply.Err != "OK"{
